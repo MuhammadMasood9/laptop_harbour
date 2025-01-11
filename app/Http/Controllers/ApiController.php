@@ -26,6 +26,7 @@ use App\Rules\MatchOldPassword;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Exception;
 use Helper;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 
 
@@ -34,6 +35,46 @@ class ApiController extends Controller
 
 
 
+    public function login(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'email' => 'required|email',
+            'password' => 'required|string|min:8',
+        ]);
+    
+        // Check if validation fails
+        if ($validator->fails()) {
+            return response()->json([
+                'errors' => $validator->errors(),
+            ], 422); // Unprocessable Entity
+        }
+
+        // Find user by email
+        $user = AppUser::where('email', $request->email)->first();
+
+        // Check if user exists and password is correct
+        if (!$user || !Hash::check($request->password, $user->password)) {
+            return response()->json([
+                'message' => 'Invalid email or password',
+            ], 401); // 401 Unauthorized
+        }
+
+        // Ensure user is active (if you have a 'status' column)
+        if ($user->status !== 'active') {
+            return response()->json([
+                'message' => 'Your account is not active.',
+            ], 403); // 403 Forbidden
+        }
+
+        // Generate a personal access token
+        $token = $user->createToken('Personal Access Token')->plainTextToken;
+
+        // Return user and token
+        return response()->json([
+            'user' => $user,
+            'token' => $token,
+        ], 200); // 200 OK
+    }
 
 
     public function register(Request $request)
@@ -81,46 +122,18 @@ class ApiController extends Controller
     /**
      * Login user and generate token.
      */
-    public function login(Request $request)
-    {
-        $request->validate([
-            'email' => 'required|email',
-            'password' => 'required|string|min:8',
-        ]);
-
-        // Find user by email
-        $user = AppUser::where('email', $request->email)->first();
-
-        // Check if user exists and password is correct
-        if (!$user || !Hash::check($request->password, $user->password)) {
-            return response()->json([
-                'message' => 'Invalid email or password',
-            ], 401); // 401 Unauthorized
-        }
-
-        // Ensure user is active (if you have a 'status' column)
-        if ($user->status !== 'active') {
-            return response()->json([
-                'message' => 'Your account is not active.',
-            ], 403); // 403 Forbidden
-        }
-
-        // Generate a personal access token
-        $token = $user->createToken('Personal Access Token')->plainTextToken;
-
-        // Return user and token
-        return response()->json([
-            'user' => $user,
-            'token' => $token,
-        ], 200); // 200 OK
-    }
-
+   
     /**
      * Fetch authenticated user details.
      */
     public function user(Request $request)
+
     {
-        return response()->json($request->user());
+        
+        $user = DB::table('users')->get();
+     
+       
+        return response()->json($user);
     }
 
     public function profile()
@@ -138,35 +151,67 @@ class ApiController extends Controller
     {
         // Get the currently authenticated user
         $user = Auth::user();
+        
+// Validation
+$this->validate($request, [
+    'name' => 'nullable|string|max:30',
+    'email' => 'nullable|string|email',
+    'password' => 'nullable|string|min:6',
+   
+    'status' => 'nullable|in:active,inactive',
+    'photo' => 'nullable|image|mimes:jpg,jpeg,png,gif|max:2048',
+]);
 
-        // Validate the incoming request data
-        $validated = $request->validate([
-            'name' => 'nullable|string|max:255', // 'name' is optional
-            'email' => 'nullable|string|email|max:255|unique:users,email,' . $user->id, // Ensure the email is unique, but not for the current user
-            // Add other fields as needed, e.g., phone number, address, etc.
-        ]);
+// Initialize the data array from the request, excluding the photo initially
+$data = $request->only(['name', 'email', 'password', 'photo', 'status']);
 
-        // Update the user's data using the DB facade
-        $status = DB::table('users')
-            ->where('id', $user->id)
-            ->update($validated);
+// If a new photo is uploaded
+if ($request->hasFile('photo')) {
+    // Delete old photo if exists
+    if ($user->photo && file_exists(public_path($user->photo))) {
+        unlink(public_path($user->photo)); // Delete old photo
+    }
 
-        if ($status) {
-            // Fetch the updated user data
-            $updatedUser = DB::table('users')->where('id', $user->id)->first();
+    // Define the directory path
+    $directoryPath = public_path('storage/users');
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Profile updated successfully',
-                'data' => $updatedUser,
-            ], 200); // 200 OK status code
-        }
+    // Create the directory if it doesn't exist
+    if (!file_exists($directoryPath)) {
+        mkdir($directoryPath, 0777, true); // Create folder with permissions
+    }
 
-        // If the update fails, return an error response
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to update profile. Please try again.',
-        ], 500); // 500 Internal Server Error status code
+    // Generate a unique file name for the new photo
+    $photoName = time() . '_' . $request->file('photo')->getClientOriginalName();
+
+    // Move the uploaded photo to the directory
+    $request->file('photo')->move($directoryPath, $photoName);
+
+    // Save the new photo path in the data array
+    $data['photo'] = 'storage/users/' . $photoName;
+}
+
+// If password is provided, hash it
+if ($request->has('password')) {
+    $data['password'] = Hash::make($request->password);
+}
+
+// Update the user with the data
+$status = $user->update($data);  // The `update()` method should work here
+
+// Return a JSON response
+if ($status) {
+    return response()->json([
+        'success' => true,
+        'message' => 'User updated successfully',
+        'user' => $user
+    ], 200);
+} else {
+    return response()->json([
+        'success' => false,
+        'message' => 'Error occurred while updating user'
+    ], 400);
+}
+
     }
     // Get Orders
     public function orderIndex()
@@ -649,51 +694,70 @@ class ApiController extends Controller
             $products->whereBetween('price', $price);
         }
 
-        if ($request->has('show')) {
-            $products = $products->paginate($request->show);
-        } else {
-            $products = $products->paginate(6);
-        }
+     
 
-        $recent_products = Product::where('status', 'active')->orderBy('id', 'DESC')->limit(3)->get();
+        $recent_products = Product::where('status', 'active')->orderBy('id', 'DESC')->get();
 
         return response()->json([
-            'products' => $products,
+            
             'recent_products' => $recent_products,
         ]);
     }
     public function productFilter(Request $request)
     {
         $data = $request->all();
-
-        $filters = [];
-
-        if ($request->has('show')) {
-            $filters['show'] = $data['show'];
-        }
-
-        if ($request->has('sortBy')) {
-            $filters['sortBy'] = $data['sortBy'];
-        }
-
+    
+        // Start with a query to get all products
+        $query = Product::query();
+    
+        // Apply filters based on the request
         if ($request->has('category')) {
-            $filters['category'] = $data['category'];
+            $query->where('cat_id', $data['category']);
         }
-
+    
         if ($request->has('brand')) {
-            $filters['brand'] = $data['brand'];
+            $query->where('brand_id', $data['brand']);
         }
-
+    
         if ($request->has('price_range')) {
-            $filters['price_range'] = $data['price_range'];
+            // Split the price_range into a min and max value (assumed format "min-max")
+            $priceRange = explode('-', $data['price_range']);
+            if (count($priceRange) == 2) {
+                $query->whereBetween('price', [$priceRange[0], $priceRange[1]]);
+            }
         }
-
+    
+        if ($request->has('sortBy')) {
+            // Sorting based on the 'sortBy' parameter
+            switch ($data['sortBy']) {
+                case 'price_asc':
+                    $query->orderBy('price', 'asc');
+                    break;
+                case 'price_desc':
+                    $query->orderBy('price', 'desc');
+                    break;
+                case 'newest':
+                    $query->orderBy('created_at', 'desc');
+                    break;
+                case 'oldest':
+                    $query->orderBy('created_at', 'asc');
+                    break;
+                default:
+                    break;
+            }
+        }
+    
+       
+            // If 'show' is not set, return all products
+            $products = $query->get();
+        
+    
+        // Return the filtered products
         return response()->json([
-            'filters' => $filters,
-            'redirect_url' => route('product-lists', $filters),
+            'products' => $products,
         ]);
     }
-
+    
     public function productSearch(Request $request)
     {
         $products = Product::where('status', 'active')
@@ -705,9 +769,9 @@ class ApiController extends Controller
                     ->orWhere('price', 'like', '%' . $request->search . '%');
             })
             ->orderBy('id', 'DESC')
-            ->paginate(9);
+            ;
 
-        $recent_products = Product::where('status', 'active')->orderBy('id', 'DESC')->limit(3)->get();
+        $recent_products = Product::where('status', 'active')->orderBy('id', 'DESC')->get();
 
         return response()->json([
             'products' => $products,
@@ -896,35 +960,7 @@ public function createOrder(Request $request)
 
     return response()->json(['message' => 'Something went wrong! Please try again!'], 500);
 }
-public function updateOrder(Request $request, $id)
-{
-    $order = Order::find($id);
-    if (!$order) {
-        return response()->json(['message' => 'Order not found'], 404);
-    }
 
-    $this->validate($request, [
-        'status' => 'required|in:new,process,delivered,cancel'
-    ]);
-
-    $data = $request->all();
-
-    if ($request->status == 'delivered') {
-        foreach ($order->cart as $cart) {
-            $product = $cart->product;
-            $product->stock -= $cart->quantity;
-            $product->save();
-        }
-    }
-
-    $status = $order->fill($data)->save();
-
-    if ($status) {
-        return response()->json(['message' => 'Order successfully updated'], 200);
-    } else {
-        return response()->json(['message' => 'Error while updating order'], 500);
-    }
-}
 public function deleteOrder($id)
 {
     $order = Order::find($id);

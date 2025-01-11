@@ -36,30 +36,53 @@ class UsersController extends Controller
      */
     public function store(Request $request)
     {
-        $this->validate($request,
-        [
-            'name'=>'string|required|max:30',
-            'email'=>'string|required|unique:users',
-            'password'=>'string|required',
-            'role'=>'required|in:admin,user',
-            'status'=>'required|in:active,inactive',
-            'photo'=>'nullable|string',
+        $this->validate($request, [
+            'name' => 'string|required|max:30',
+            'email' => 'string|required|unique:users',
+            'password' => 'string|required',
+            'role' => 'required|in:admin,user',
+            'status' => 'required|in:active,inactive',
+            'photo' => 'nullable|image|mimes:jpg,jpeg,png,gif|max:2048',  // Add validation for photo
         ]);
-        // dd($request->all());
-        $data=$request->all();
-        $data['password']=Hash::make($request->password);
-        // dd($data);
-        $status=User::create($data);
-        // dd($status);
-        if($status){
-            request()->session()->flash('success','Successfully added user');
+    
+        // Initialize the data array from the request
+        $data = $request->all();
+        $data['password'] = Hash::make($request->password);
+    
+        // Check if a photo was uploaded
+        if ($request->hasFile('photo')) {
+            // Define the directory path
+            $directoryPath = public_path('storage/users');
+            
+            // Create the directory if it doesn't exist
+            if (!file_exists($directoryPath)) {
+                mkdir($directoryPath, 0777, true); // Create folder with permissions
+            }
+    
+            // Generate a unique file name for the photo
+            $photoName = time() . '_' . $request->file('photo')->getClientOriginalName();
+            
+            // Move the uploaded photo to the directory
+            $request->file('photo')->move($directoryPath, $photoName);
+    
+            // Save the photo path in the database
+            $data['photo'] = 'storage/users/' . $photoName;  // Save relative path to the photo
         }
-        else{
-            request()->session()->flash('error','Error occurred while adding user');
+    
+        // Create the user
+        $status = User::create($data);
+    
+        // Flash a success or error message to the session
+        if ($status) {
+            request()->session()->flash('success', 'Successfully added user');
+        } else {
+            request()->session()->flash('error', 'Error occurred while adding user');
         }
+    
+        // Redirect back to the users index page
         return redirect()->route('users.index');
-
     }
+    
 
     /**
      * Display the specified resource.
@@ -93,29 +116,61 @@ class UsersController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $user=User::findOrFail($id);
-        $this->validate($request,
-        [
-            'name'=>'string|required|max:30',
-            'email'=>'string|required',
-            'role'=>'required|in:admin,user',
-            'status'=>'required|in:active,inactive',
-            'photo'=>'nullable|string',
+        // Find the user by id
+        $user = User::findOrFail($id);
+    
+        // Validation
+        $request->validate([
+            'name' => 'string|required|max:30',
+            'email' => 'string|required|email',
+            'role' => 'required|in:admin,user',
+            'status' => 'required|in:active,inactive',
+            'photo' => 'nullable|image|mimes:jpg,jpeg,png,gif|max:2048',  // Add validation for photo
         ]);
-        // dd($request->all());
-        $data=$request->all();
-        // dd($data);
-        
-        $status=$user->fill($data)->save();
-        if($status){
-            request()->session()->flash('success','Successfully updated');
+    
+        // Initialize the data array from the request (all fields except photo)
+        $data = $request->all();  // Now all fields are in the data array
+    
+        // If a new photo is uploaded
+        if ($request->hasFile('photo')) {
+            // Delete the old photo if it exists
+            if ($user->photo && file_exists(public_path($user->photo))) {
+                unlink(public_path($user->photo)); // Delete old photo
+            }
+    
+            // Define the directory path
+            $directoryPath = public_path('storage/users');
+    
+            // Create the directory if it doesn't exist
+            if (!file_exists($directoryPath)) {
+                mkdir($directoryPath, 0777, true); // Create folder with permissions
+            }
+    
+            // Generate a unique file name for the new photo
+            $photoName = time() . '_' . $request->file('photo')->getClientOriginalName();
+    
+            // Move the uploaded photo to the directory
+            $request->file('photo')->move($directoryPath, $photoName);
+    
+            // Save the new photo path in the database
+            $data['photo'] = 'storage/users/' . $photoName;
         }
-        else{
-            request()->session()->flash('error','Error occured while updating');
+    
+        // Update the user data
+        $status = $user->update($data);  // Use update() to update the fields in the database
+    
+        // Flash success or error message
+        if ($status) {
+            session()->flash('success', 'Successfully updated user');
+        } else {
+            session()->flash('error', 'Error occurred while updating user');
         }
+    
+        // Redirect back to the users index page
         return redirect()->route('users.index');
-
     }
+    
+
 
     /**
      * Remove the specified resource from storage.
