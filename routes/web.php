@@ -36,6 +36,17 @@
     })->name('cache.clear');
 
 
+    Route::get('/test-cache-path', function () {
+        $cachePath = storage_path('framework/cache/data');
+    
+        return [
+            'path' => $cachePath,
+            'exists' => file_exists($cachePath),
+            'is_writable' => is_writable($cachePath),
+        ];
+    });
+    
+
     // STORAGE LINKED ROUTE
     Route::get('storage-link',[AdminController::class,'storageLink'])->name('storage.link');
 
