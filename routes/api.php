@@ -2,16 +2,25 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ApiController;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Support\Facades\RateLimiter;
+
+RateLimiter::for('api', function () {
+    return Limit::perMinute(100); // Adjust the limit here
+});
+
 
 Route::post('/login', [ApiController::class, 'login']); // Public route for login
-Route::post('/register', [ApiController::class, 'register'])->middleware('throttle:60,1'); // Public route for login
-Route::post('/mas', [ApiController::class, 'mas']); // Public route for login
 
+
+Route::post('/register', [ApiController::class, 'register']); // Public route for login
+
+
+Route::get('/user', [ApiController::class, 'user']); // Protected route to fetch user details
 Route::middleware('auth:sanctum')->group(function () {
-    Route::get('/user', [ApiController::class, 'user']); // Protected route to fetch user details
 
     Route::get('/profile', [ApiController::class, 'profile'])->name('api.profile');
-    Route::put('/profile', [ApiController::class, 'profileUpdate'])->name('api.profile.update');
+    Route::put('/profileUpdate', [ApiController::class, 'profileUpdate']);
 
     // Order Routes
     Route::get('/orders', [ApiController::class, 'orderIndex'])->name('api.orders.index');
@@ -56,7 +65,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('products/search', [ApiController::class, 'productSearch']);
     Route::get('products/brand/{slug}', [ApiController::class, 'productBrand']);
     Route::get('products/category/{slug}', [ApiController::class, 'productCat']);
-    Route::get('products/sub-category/{sub_slug}', [ApiController::class, 'productSubCat']);
 
     //review
     Route::post('reviews', [ApiController::class, 'createReview']); // Create review
