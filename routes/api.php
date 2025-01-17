@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\Storage;
 
 Route::get('image-base64/{image}', function ($image) {
     $imagePath = storage_path('app/public/users/' . $image);
-    
+
     if (file_exists($imagePath)) {
         $imageData = file_get_contents($imagePath);
         $base64 = base64_encode($imageData);
@@ -29,7 +29,7 @@ Route::post('/login', [ApiController::class, 'login']); // Public route for logi
 
 Route::post('/register', [ApiController::class, 'register']); // Public route for login
 
-
+Route::get('/shipment', [ApiController::class, 'shipment']);
 Route::get('/user', [ApiController::class, 'user']); // Protected route to fetch user details
 Route::middleware('auth:sanctum')->group(function () {
 
@@ -73,7 +73,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('allwishlist', [ApiController::class, 'allwishlist']);
     Route::get('products', [ApiController::class, 'productLists']);
     Route::get('products/SearchAndFilter', [ApiController::class, 'productSearchAndFilter']);
- 
+
     Route::get('products/brand', [ApiController::class, 'productBrand']);
     Route::get('products/category', [ApiController::class, 'productCat']);
 
