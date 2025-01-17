@@ -2,10 +2,11 @@
 
     <!-- Sidebar - Brand -->
     <a class="sidebar-brand d-flex align-items-center justify-content-center" href="{{route('admin')}}">
-      <div class="sidebar-brand-icon rotate-n-15">
-        <i class="fas fa-laugh-wink"></i>
-      </div>
-      <div class="sidebar-brand-text mx-3">Admin</div>
+
+
+        <img width="150px" src="{{ asset('images/appLogo.png') }}" alt="">
+
+
     </a>
 
     <!-- Divider -->
@@ -21,7 +22,7 @@
     <!-- Divider -->
     <hr class="sidebar-divider">
 
- 
+
         <!-- Heading -->
         <div class="sidebar-heading">
             Shop
@@ -100,18 +101,18 @@
             <i class="fas fa-comments"></i>
             <span>Reviews</span></a>
     </li>
-    
+
 
     <!-- Divider -->
     <hr class="sidebar-divider">
 
-   
-   
+
+
      <!-- Heading -->
     <div class="sidebar-heading">
         General Settings
     </div>
-  
+
      <!-- Users -->
      <li class="nav-item">
         <a class="nav-link" href="{{route('users.index')}}">
