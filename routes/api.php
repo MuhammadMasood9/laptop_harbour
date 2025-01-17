@@ -4,6 +4,20 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ApiController;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Storage;
+
+Route::get('image-base64/{image}', function ($image) {
+    $imagePath = storage_path('app/public/users/' . $image);
+    
+    if (file_exists($imagePath)) {
+        $imageData = file_get_contents($imagePath);
+        $base64 = base64_encode($imageData);
+
+        return response()->json(['image' => 'data:image/jpeg;base64,' . $base64]);
+    }
+
+    return response()->json(['error' => 'Image not found'], 404);
+});
 
 RateLimiter::for('api', function () {
     return Limit::perMinute(100); // Adjust the limit here
@@ -28,10 +42,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/orders/{id}', [ApiController::class, 'userOrderDelete'])->name('api.orders.delete');
 
     // Product Review Routes
-    Route::get('/reviews', [ApiController::class, 'productReviewIndex'])->name('api.reviews.index');
-    Route::get('/reviews/{id}', [ApiController::class, 'productReviewEdit'])->name('api.reviews.edit');
-    Route::put('/reviews/{id}', [ApiController::class, 'productReviewUpdate'])->name('api.reviews.update');
-    Route::delete('/reviews/{id}', [ApiController::class, 'productReviewDelete'])->name('api.reviews.delete');
+    Route::get('/getreviews', [ApiController::class, 'productReviewIndex'])->name('api.reviews.index');
 
     // Comment Routes
     Route::get('/comments', [ApiController::class, 'userComment'])->name('api.comments.index');
@@ -45,34 +56,34 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('wishlist', [ApiController::class, 'wishlist']);
 
     // Route for deleting a product from the wishlist
-    Route::delete('wishlist/{id}', [ApiController::class, 'wishlistDelete']);
+    Route::delete('wishlist/delete', [ApiController::class, 'wishlistDelete']);
 
     Route::post('cart', [ApiController::class, 'addToCart']);
-
+    Route::get('allcart', [ApiController::class, 'AllCart']);
     // Add a single product with quantity to cart
     Route::post('cart/single', [ApiController::class, 'singleAddToCart']);
 
     // Delete product from cart
-    Route::delete('cart/{id}', [ApiController::class, 'cartDelete']);
+    Route::delete('cart/delete', [ApiController::class, 'cartDelete']);
 
     // Update cart item quantity
-    Route::put('cart', [ApiController::class, 'cartUpdate']);
+    Route::put('cart/update', [ApiController::class, 'cartUpdate']);
 
     // Product
-
+    Route::get('allwishlist', [ApiController::class, 'allwishlist']);
     Route::get('products', [ApiController::class, 'productLists']);
-    Route::post('products/filter', [ApiController::class, 'productFilter']);
-    Route::get('products/search', [ApiController::class, 'productSearch']);
-    Route::get('products/brand/{slug}', [ApiController::class, 'productBrand']);
-    Route::get('products/category/{slug}', [ApiController::class, 'productCat']);
+    Route::get('products/SearchAndFilter', [ApiController::class, 'productSearchAndFilter']);
+ 
+    Route::get('products/brand', [ApiController::class, 'productBrand']);
+    Route::get('products/category', [ApiController::class, 'productCat']);
 
     //review
     Route::post('reviews', [ApiController::class, 'createReview']); // Create review
-    Route::put('reviews/{id}', [ApiController::class, 'updateReview']); // Update review
-    Route::delete('reviews/{id}', [ApiController::class, 'deleteReview']); // Delete review
+    // Route::put('reviews/{id}', [ApiController::class, 'updateReview']); // Update review
+    // Route::delete('reviews/{id}', [ApiController::class, 'deleteReview']); // Delete review
 
     //order
-    Route::post('orders', [ApiController::class, 'createOrder']); // Create order
+    Route::post('create/orders', [ApiController::class, 'createOrder']); // Create order
     Route::put('orders/{id}', [ApiController::class, 'updateOrder']); // Update order
     Route::delete('orders/{id}', [ApiController::class, 'deleteOrder']); // Delete order
     Route::post('orders/track', [ApiController::class, 'trackOrder']); // Track order

@@ -277,9 +277,9 @@ if ($status) {
     }
 
     // Get Product Reviews
-    public function productReviewIndex()
+    public function productReviewIndex(Request $request)
     {
-        $reviews = ProductReview::where('user_id', Auth::id())->get();
+        $reviews = ProductReview::where('product_id', $request->slug)->get();
 
         return response()->json([
             'success' => true,
@@ -288,74 +288,7 @@ if ($status) {
     }
 
     // Edit Product Review
-    public function productReviewEdit($id)
-    {
-        $review = ProductReview::find($id);
 
-        if (!$review) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Review not found',
-            ], 404);
-        }
-
-        return response()->json([
-            'success' => true,
-            'data' => $review,
-        ], 200);
-    }
-
-    // Update Product Review
-    public function productReviewUpdate(Request $request, $id)
-    {
-        $review = ProductReview::find($id);
-
-        if (!$review) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Review not found',
-            ], 404);
-        }
-
-        $data = $request->all();
-
-        if ($review->fill($data)->save()) {
-            return response()->json([
-                'success' => true,
-                'message' => 'Review successfully updated',
-            ], 200);
-        }
-
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to update review',
-        ], 500);
-    }
-
-    // Delete Product Review
-    public function productReviewDelete($id)
-    {
-        $review = ProductReview::find($id);
-
-        if (!$review) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Review not found',
-            ], 404);
-        }
-
-        if ($review->delete()) {
-            return response()->json([
-                'success' => true,
-                'message' => 'Review successfully deleted',
-            ], 200);
-        }
-
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to delete review',
-        ], 500);
-    }
 
     // Get User Comments
     public function userComment()
@@ -441,36 +374,61 @@ if ($status) {
     // Change User Password
     public function changePassword(Request $request)
     {
-        // Validate the request
-        $request->validate([
-            'current_password' => ['required', new MatchOldPassword], // Custom validation rule for current password
-            'new_password' => ['required', 'min:8'], // Validate new password length
-            'new_confirm_password' => ['required', 'same:new_password'], // Ensure passwords match
+        // Use Validator::make() to handle validation
+        $validator = Validator::make($request->all(), [
+            'current_password' => ['required', new MatchOldPassword],
+            'new_password' => ['required', 'min:8'],
+            'new_confirm_password' => ['required', 'same:new_password'],
         ]);
-
-        // Get the currently authenticated user
-        $user = Auth::user();
-
-        // Update the user's password using the DB facade
-        $status = DB::table('users')
-            ->where('id', $user->id)
-            ->update([
-                'password' => Hash::make($request->new_password), // Hash the new password
-            ]);
-
-        if ($status) {
+    
+        // If validation fails, return validation errors
+        if ($validator->fails()) {
             return response()->json([
-                'success' => true,
-                'message' => 'Password successfully changed',
-            ], 200); // 200 OK status code
+                'success' => false,
+                'message' => $validator->errors(), // Return validation errors
+            ], 422);
         }
-
-        // If the update fails, return an error response
-        return response()->json([
-            'success' => false,
-            'message' => 'Failed to change password. Please try again.',
-        ], 500); // 500 Internal Server Error status code
+    
+        try {
+            $user = Auth::user();
+    
+            // Check if the current password matches
+            if (!Hash::check($request->current_password, $user->password)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Current password is incorrect',
+                ], 400);
+            }
+    
+            // Update password in the database
+            $status = DB::table('users')
+                ->where('id', $user->id)
+                ->update([
+                    'password' => Hash::make($request->new_password),
+                ]);
+    
+            // Check if the update was successful
+            if ($status) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Password successfully changed',
+                ], 200);
+            }
+    
+            // If updating the password failed
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to change password. Please try again.',
+            ], 500);
+        } catch (\Exception $e) {
+            // Catch any exception that occurs during the password change process
+            return response()->json([
+                'success' => false,
+                'message' => 'An error occurred. Please try again later.',
+            ], 500);
+        }
     }
+    
 
     public function wishlist(Request $request)
     {
@@ -526,21 +484,29 @@ if ($status) {
     }
     public function wishlistDelete(Request $request)
     {
-        $wishlist = Wishlist::find($request->id);
-
-        if ($wishlist) {
-            $wishlist->delete();
-            return response()->json([
-                'success' => true,
-                'message' => 'Wishlist item successfully removed',
-            ], 200); // 200 OK
+        $valid = $request->validate([
+            'id' => 'required|exists:wishlists,id',
+        ]);
+    
+        if ($valid) {
+            // Use the Wishlist model to find and delete the record
+            $wishlist = Wishlist::find($request->id);
+    
+            if ($wishlist) {
+                $wishlist->delete(); // Delete using the Eloquent model
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Wishlist item successfully removed',
+                ], 200);
+            }
         }
-
+    
         return response()->json([
             'success' => false,
             'message' => 'Wishlist item not found',
-        ], 404); // Not Found
+        ], 404);
     }
+    
 
     public function addToCart(Request $request)
     {
@@ -548,9 +514,9 @@ if ($status) {
             return response()->json(['error' => 'Invalid Product'], 400);
         }
 
-        $product = Product::where('slug', $request->slug)->first();
+        $product = Product::where('id', $request->slug)->first();
         if (empty($product)) {
-            return response()->json(['error' => 'Product not found'], 404);
+            return response()->json(['error' => 'Product not found'], 400);
         }
 
         $already_cart = Cart::where('user_id', auth()->user()->id)->where('order_id', null)->where('product_id', $product->id)->first();
@@ -560,7 +526,7 @@ if ($status) {
             $already_cart->amount += $product->price;
 
             if ($already_cart->product->stock < $already_cart->quantity || $already_cart->product->stock <= 0) {
-                return response()->json(['error' => 'Stock not sufficient'], 400);
+                return response()->json(['success' => 'Stock not sufficient'], 200);
             }
 
             $already_cart->save();
@@ -573,7 +539,7 @@ if ($status) {
             $cart->amount = $cart->price * $cart->quantity;
 
             if ($cart->product->stock < $cart->quantity || $cart->product->stock <= 0) {
-                return response()->json(['error' => 'Stock not sufficient'], 400);
+                return response()->json(['success' => 'Stock not sufficient'], 400);
             }
 
             $cart->save();
@@ -582,6 +548,32 @@ if ($status) {
 
         return response()->json(['success' => 'Product successfully added to cart'], 200);
     }
+    public function allwishlist(Request $request)
+    {
+       
+
+        $already_cart = Wishlist::with('product')->where('user_id', auth()->user()->id)->get();
+
+        if(!$already_cart){
+            return response()->json(['wishlist' => "No Cart Found",], 200);
+        }
+
+        return response()->json(['wishlist' => $already_cart,], 200);
+    }
+
+    public function AllCart(Request $request)
+    {
+       
+
+        $already_cart = Cart::with('product')->where('order_id',null)->where('user_id', auth()->user()->id)->get();
+
+        if(!$already_cart){
+            return response()->json(['cart' => "No Cart Found",], 200);
+        }
+
+        return response()->json(['cart' => $already_cart,], 200);
+    }
+
 
     // Single product add to cart with quantity
     public function singleAddToCart(Request $request)
@@ -642,93 +634,96 @@ if ($status) {
     public function cartUpdate(Request $request)
     {
         $request->validate([
-            'quant' => 'required|array',
-            'quant.*' => 'required|integer|min:1',
-            'qty_id' => 'required|array',
-            'qty_id.*' => 'required|integer|exists:carts,id',
+            'quant' => 'required|array|min:1', // Ensure it's a non-empty array
+            'quant.*' => 'required|integer|min:1', // Each quantity must be an integer and at least 1
+            'qty_id' => 'required|array|min:1', // Ensure it's a non-empty array
+            'qty_id.*' => 'required|integer|exists:carts,id', // Each ID must exist in the 'carts' table
         ]);
-
-        foreach ($request->quant as $k => $quant) {
-            $cart = Cart::find($request->qty_id[$k]);
-            if ($cart && $quant > 0) {
-                if ($cart->product->stock < $quant) {
-                    return response()->json(['error' => 'Out of stock'], 400);
+    
+        foreach ($request->quant as $key => $quantity) {
+            $cartId = $request->qty_id[$key] ?? null; // Get the corresponding cart ID
+    
+            // Ensure the cart exists and quantity is valid
+            $cart = Cart::find($cartId);
+            if ($cart) {
+                if ($cart->product->stock < $quantity) {
+                    return response()->json(['error' => 'Out of stock for product: ' . $cart->product->title], 400);
                 }
-
-                $cart->quantity = $quant;
-                $cart->amount = $cart->product->price * $quant;
+    
+                // Update the cart item
+                $cart->quantity = $quantity;
+                $cart->amount = $cart->product->price * $quantity;
                 $cart->save();
             } else {
-                return response()->json(['error' => 'Invalid cart item'], 400);
+                return response()->json(['error' => 'Invalid cart item or cart ID'], 400);
             }
         }
-
+    
         return response()->json(['success' => 'Cart successfully updated'], 200);
     }
+    
     public function productLists(Request $request)
     {
-        $products = Product::query();
-
-        if ($request->has('category')) {
-            $slug = explode(',', $request->category);
-            $cat_ids = Category::select('id')->whereIn('slug', $slug)->pluck('id')->toArray();
-            $products->whereIn('cat_id', $cat_ids);
+        // Validate the incoming request to ensure the 'id' is provided
+        $request->validate([
+            'id' => 'required|integer|exists:products,id', // Validate that 'id' is an integer and exists in the products table
+        ]);
+    
+        // Retrieve the product by its ID
+        $product = Product::with(['cat_info', 'brand'])  // Assuming the relationship is defined
+                          ->find($request->id);
+    
+        if (!$product) {
+            return response()->json([
+                'message' => 'Product not found'
+            ], 404);
         }
-
-        if ($request->has('brand')) {
-            $slugs = explode(',', $request->brand);
-            $brand_ids = Brand::select('id')->whereIn('slug', $slugs)->pluck('id')->toArray();
-            $products->whereIn('brand_id', $brand_ids);
-        }
-
-        if ($request->has('sortBy')) {
-            if ($request->sortBy == 'title') {
-                $products->orderBy('title', 'ASC');
-            } elseif ($request->sortBy == 'price') {
-                $products->orderBy('price', 'ASC');
-            }
-        }
-
-        if ($request->has('price')) {
-            $price = explode('-', $request->price);
-            $products->whereBetween('price', $price);
-        }
-
-     
-
-        $recent_products = Product::where('status', 'active')->orderBy('id', 'DESC')->get();
-
+    
+        // Return the product data with its associated category and brand details
         return response()->json([
+            'product' => $product,
             
-            'recent_products' => $recent_products,
         ]);
     }
-    public function productFilter(Request $request)
+    
+    public function productSearchAndFilter(Request $request)
     {
         $data = $request->all();
     
         // Start with a query to get all products
-        $query = Product::query();
+        $query = Product::where('status', 'active');
     
-        // Apply filters based on the request
+        // Filter by category if provided
         if ($request->has('category')) {
             $query->where('cat_id', $data['category']);
         }
     
+        // Filter by brand if provided
         if ($request->has('brand')) {
             $query->where('brand_id', $data['brand']);
         }
     
+        // Filter by price range if provided
         if ($request->has('price_range')) {
-            // Split the price_range into a min and max value (assumed format "min-max")
             $priceRange = explode('-', $data['price_range']);
             if (count($priceRange) == 2) {
                 $query->whereBetween('price', [$priceRange[0], $priceRange[1]]);
             }
         }
     
+        // Apply search term if provided
+        if ($request->has('search') && !empty($data['search'])) {
+            $query->where(function ($query) use ($data) {
+                $query->orWhere('title', 'like', '%' . $data['search'] . '%')
+                    ->orWhere('slug', 'like', '%' . $data['search'] . '%')
+                    ->orWhere('description', 'like', '%' . $data['search'] . '%')
+                    ->orWhere('summary', 'like', '%' . $data['search'] . '%')
+                    ->orWhere('price', 'like', '%' . $data['search'] . '%');
+            });
+        }
+    
+        // Apply sorting if 'sortBy' is provided
         if ($request->has('sortBy')) {
-            // Sorting based on the 'sortBy' parameter
             switch ($data['sortBy']) {
                 case 'price_asc':
                     $query->orderBy('price', 'asc');
@@ -747,69 +742,45 @@ if ($status) {
             }
         }
     
-       
-            // If 'show' is not set, return all products
-            $products = $query->get();
-        
+        // Get the filtered products
+        $products = $query->get();
     
-        // Return the filtered products
+        // Optionally get all the properties before applying search or filter, if needed
+        $allProperties = [
+            'categories' => Category::all(), // Assuming you have a Category model
+            'brands' => Brand::all(),         // Assuming you have a Brand model
+             // Custom logic to get available price ranges
+            // Add more properties as needed
+        ];
+    
+        // Return the filtered products and all available properties
         return response()->json([
             'products' => $products,
+            'allProperties' => $allProperties,
         ]);
     }
     
-    public function productSearch(Request $request)
-    {
-        $products = Product::where('status', 'active')
-            ->where(function ($query) use ($request) {
-                $query->orWhere('title', 'like', '%' . $request->search . '%')
-                    ->orWhere('slug', 'like', '%' . $request->search . '%')
-                    ->orWhere('description', 'like', '%' . $request->search . '%')
-                    ->orWhere('summary', 'like', '%' . $request->search . '%')
-                    ->orWhere('price', 'like', '%' . $request->search . '%');
-            })
-            ->orderBy('id', 'DESC')
-            ;
-
-        $recent_products = Product::where('status', 'active')->orderBy('id', 'DESC')->get();
-
-        return response()->json([
-            'products' => $products,
-            'recent_products' => $recent_products,
-        ]);
-    }
+    
     public function productBrand(Request $request)
     {
-        $products = Brand::getProductByBrand($request->slug);
-        $recent_products = Product::where('status', 'active')->orderBy('id', 'DESC')->limit(3)->get();
+        $brand = Brand::all();
 
         return response()->json([
-            'products' => $products->products,
-            'recent_products' => $recent_products,
+            'brand' => $brand,
         ]);
     }
 
     public function productCat(Request $request)
     {
-        $products = Category::getProductByCat($request->slug);
-        $recent_products = Product::where('status', 'active')->orderBy('id', 'DESC')->limit(3)->get();
+        $products = Category::get();
+       
 
         return response()->json([
-            'products' => $products->products,
-            'recent_products' => $recent_products,
+            'category' => $products,
+            
         ]);
     }
-    public function productSubCat(Request $request)
-    {
-        $products = Category::getProductBySubCat($request->sub_slug);
-        $recent_products = Product::where('status', 'active')->orderBy('id', 'DESC')->limit(3)->get();
-
-        return response()->json([
-            'products' => $products->sub_products,
-            'recent_products' => $recent_products,
-        ]);
-    }
-
+ 
     public function createReview(Request $request)
 {
     // Validate the request data
@@ -817,9 +788,10 @@ if ($status) {
         'rate' => 'required|numeric|min:1',
     ]);
 
-    $product_info = Product::getProductBySlug($request->slug);
+    $product_info = Product::find($request->slug);
+    
     if (!$product_info) {
-        return response()->json(['message' => 'Product not found'], 404);
+        return response()->json(['message' => "product not found"], 404);
     }
 
     $data = $request->all();
@@ -831,18 +803,12 @@ if ($status) {
     $status = ProductReview::create($data);
 
     // Notify admin (optional, can be omitted for pure API)
-    $user = AppUser::where('role', 'admin')->get();
-    $details = [
-        'title' => 'New Product Rating!',
-        'actionURL' => route('product-detail', $product_info->slug),
-        'fas' => 'fa-star',
-    ];
-    Notification::send($user, new StatusNotification($details));
-
+  
+  
     if ($status) {
-        return response()->json(['message' => 'Thank you for your feedback'], 201);
+        return response()->json(['message' => 'Thank you for your feedback'], 200);
     } else {
-        return response()->json(['message' => 'Something went wrong! Please try again!!'], 500);
+        return response()->json(['message' => 'Something went wrong! Please try again!!'], 200);
     }
 }
 
@@ -881,85 +847,103 @@ public function deleteReview($id)
 }
 
 
+
 public function createOrder(Request $request)
 {
-    $this->validate($request, [
-        'first_name' => 'string|required',
-        'last_name' => 'string|required',
-        'address1' => 'string|required',
-        'address2' => 'string|nullable',
-        'coupon' => 'nullable|numeric',
-        'phone' => 'numeric|required',
-        'post_code' => 'string|nullable',
-        'email' => 'string|required'
-    ]);
+    try {
+        // Validate the request data
+        $this->validate($request, [
+            'first_name' => 'string|required',
+            'last_name' => 'string|required',
+            'address1' => 'string|required',
+            'address2' => 'string|nullable',
+            'coupon' => 'nullable|numeric',
+            'phone' => 'numeric|required',
+            'post_code' => 'string|nullable',
+            'email' => 'string|required',
+            'shipping' => 'required|exists:shippings,id', // Ensure shipping_id exists in shippings table
+        ]);
 
-    if (empty(Cart::where('user_id', auth()->user()->id)->where('order_id', null)->first())) {
-        return response()->json(['message' => 'Cart is Empty!'], 400);
-    }
-
-    $order = new Order();
-    $order_data = $request->all();
-    $order_data['order_number'] = 'ORD-' . strtoupper(Str::random(10));
-    $order_data['user_id'] = $request->user()->id;
-    $order_data['shipping_id'] = $request->shipping;
-
-    $shipping = Shipping::where('id', $order_data['shipping_id'])->pluck('price');
-    $order_data['sub_total'] = Helper::totalCartPrice();
-    $order_data['quantity'] = Helper::cartCount();
-
-    if (session('coupon')) {
-        $order_data['coupon'] = session('coupon')['value'];
-    }
-
-    if ($request->shipping) {
-        if (session('coupon')) {
-            $order_data['total_amount'] = Helper::totalCartPrice() + $shipping[0] - session('coupon')['value'];
-        } else {
-            $order_data['total_amount'] = Helper::totalCartPrice() + $shipping[0];
+        // Check if the cart is empty
+        if (empty(Cart::where('user_id', auth()->user()->id)->where('order_id', null)->first())) {
+            return response()->json(['message' => 'Cart is Empty!'], 400);
         }
-    } else {
-        if (session('coupon')) {
-            $order_data['total_amount'] = Helper::totalCartPrice() - session('coupon')['value'];
-        } else {
-            $order_data['total_amount'] = Helper::totalCartPrice();
+
+        // Create a new order instance
+        $order = new Order();
+        $order_data = $request->all();
+        $order_data['order_number'] = 'ORD-' . strtoupper(Str::random(10));
+        $order_data['user_id'] = $request->user()->id;
+        $order_data['shipping_id'] = $request->shipping;
+
+        // Ensure shipping_id exists in the database
+        $shipping = Shipping::find($order_data['shipping_id']);
+        if (!$shipping) {
+            return response()->json(['message' => 'Invalid shipping method selected.'], 400);
         }
-    }
 
-    $order_data['status'] = "new";
+        // Get the shipping price
+        $order_data['sub_total'] = Helper::totalCartPrice();
+        $order_data['quantity'] = Helper::cartCount();
 
-    if ($request->payment_method == 'paypal') {
-        $order_data['payment_method'] = 'paypal';
-        $order_data['payment_status'] = 'paid';
-    } else {
-        $order_data['payment_method'] = 'cod';
-        $order_data['payment_status'] = 'Unpaid';
-    }
+        // Apply coupon if available
+        if (session('coupon')) {
+            $order_data['coupon'] = session('coupon')['value'];
+        }
 
-    $order->fill($order_data);
-    $status = $order->save();
+        $order_data['status'] = "new";
 
-    if ($status) {
-        Cart::where('user_id', auth()->user()->id)->where('order_id', null)->update(['order_id' => $order->id]);
+        // Set payment method and status
+        if ($request->payment_method == 'paypal') {
+            $order_data['payment_method'] = 'paypal';
+            $order_data['payment_status'] = 'paid';
+        } else {
+            $order_data['payment_method'] = 'cod';
+            $order_data['payment_status'] = 'Unpaid';
+        }
 
-        // Notify admin (optional, can be omitted in an API)
-        $users = AppUser::where('role', 'admin')->first();
-        $details = [
-            'title' => 'New order created',
-            'actionURL' => route('order.show', $order->id),
-            'fas' => 'fa-file-alt'
-        ];
-        Notification::send($users, new StatusNotification($details));
+        // Fill and save the order
+        $order->fill($order_data);
+        $status = $order->save();
 
+        // If the order is saved successfully, update the cart
+        if ($status) {
+            Cart::where('user_id', auth()->user()->id)->where('order_id', null)->update(['order_id' => $order->id]);
+
+            // Notify admin (optional, can be omitted in an API)
+            $admins = AppUser::where('role', 'admin')->get(); // Ensure you fetch all admins
+            $details = [
+                'title' => 'New order created',
+                'actionURL' => route('order.show', $order->id),
+                'fas' => 'fa-file-alt'
+            ];
+
+            // Send the notification to each admin
+            foreach ($admins as $admin) {
+                $admin->notify(new StatusNotification($details));
+            }
+
+            // Return successful response
+            return response()->json([
+                'message' => 'Your product has been successfully placed in order',
+                'order_id' => $order->id,
+                'payment_method' => $order->payment_method
+            ], 201);
+        }
+
+        return response()->json(['message' => 'Something went wrong! Please try again!'], 500);
+
+    } catch (Exception $e) {
+        // Catch any exception that occurs
         return response()->json([
-            'message' => 'Your product has been successfully placed in order',
-            'order_id' => $order->id,
-            'payment_method' => $order->payment_method
-        ], 201);
+            'error' => 'An error occurred while processing your order.',
+            'message' => $e->getMessage(),
+            'line' => $e->getLine(),
+            'file' => $e->getFile()
+        ], 500);
     }
-
-    return response()->json(['message' => 'Something went wrong! Please try again!'], 500);
 }
+
 
 public function deleteOrder($id)
 {

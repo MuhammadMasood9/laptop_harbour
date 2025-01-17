@@ -35,6 +35,18 @@ class OrderController extends Controller
     {
         //
     }
+    public function edit($id)
+    {
+        $order=Order::find($id);
+        // return $order;
+        return view('backend.order.edit')->with('order',$order);
+    }
+    public function show($id)
+    {
+        $order=Order::find($id);
+        // return $order;
+        return view('backend.order.show')->with('order',$order);
+    }
 
     /**
      * Store a newly created resource in storage.
